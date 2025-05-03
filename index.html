@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Turtle Chat</title>
+  <style>
+    :root { --black:#000; --forest-green:#228b22; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body,html { height:100%; background:var(--black); font-family:Arial,sans-serif; color:white; }
+    #loginPage, #chatPage { display:none; height:100%; flex-direction:column; justify-content:center; align-items:center; }
+    .form-group { margin:10px 0; }
+    input { padding:10px; border:none; border-radius:6px; width:250px; }
+    button { background:var(--forest-green); color:white; border:none; padding:10px 20px; border-radius:6px; margin:5px; cursor:pointer; transition:transform .2s; }
+    button:hover { transform:scale(1.05); }
+    .logout-btn { position:absolute; top:20px; right:20px; background:crimson; }
+    #chatWrapper { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:80vw; height:80vh; }
+    .chat-container { background:var(--black); border:5px solid var(--forest-green); border-radius:12px; width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; position:relative; }
+    .chat-area { flex:1; overflow-y:auto; padding:20px; font-size:16px; }
+    .owner-controls, .user-tools, .tools { display:flex; gap:5px; padding:10px; background:rgba(0,0,0,0.2); align-items:center; }
+    .tools input { flex:1; padding:8px; border:none; border-radius:6px; }
+    .message { padding:5px; border-radius:6px; margin-bottom:5px; position:relative; }
+    .message.self { background:rgba(34,139,34,0.3); text-align:right; }
+    .message.other { background:rgba(255,255,255,0.1); }
+    .message.owner, .system.owner-enter { color:red; }
+    .delete-btn { position:absolute; top:2px; right:2px; background:none; border:none; color:red; cursor:pointer; }
+    .fullscreen-btn { margin-left:auto; }
+    .overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; justify-content:center; align-items:center; }
+    .modal { background:#222; padding:20px; border-radius:10px; max-height:80%; overflow:auto; }
+    .modal h2 { margin-bottom:10px; }
+    .audio-controls button { margin-right:10px; }
+    .audio-controls { margin-bottom:10px; }
+  </style>
+</head>
+<body>
+  <!-- LOGIN -->
+  <div id="loginPage" style="display:flex; flex-direction:column; align-items:center;">
+    <h1>Turtle Chat 🐢</h1>
+    <div class="form-group"><label>Username</label><input id="usernameInput" type="text"></div>
+    <div class="form-group"><label>Password</label><input id="passwordInput" type="password"></div>
+    <button id="loginBtn">Login</button>
+    <button id="signUpBtn">Sign Up</button>
+    <div class="form-group"><label>TTA Code</label><input id="ttaCodeInput" type="text"></div>
+    <button id="ownerLoginBtn">Login as Owner</button>
+  </div>
+  <!-- CHAT -->
+  <div id="chatPage">
+    <button class="logout-btn" id="logoutBtn">Logout</button>
+    <div id="chatWrapper">
+      <section class="chat-container" id="chatContainer">
+        <div id="ownerControls" class="owner-controls" style="display:none;">
+          <button id="viewAccountsBtn">View Accounts</button>
+          <button id="toggleDelModeBtn">Delete Messages</button>
+        </div>
+        <div id="chatArea" class="chat-area"></div>
+        <div id="userTools" class="user-tools">
+          <button id="emojiBtn">Emoji</button>
+          <button id="audioBtn">Audio</button>
+          <button id="fileBtn">File</button>
+          <button id="fullScreenBtn" class="fullscreen-btn">Full Screen</button>
+        </div>
+        <div class="tools">
+          <input id="messageInput" type="text" placeholder="Type your message..."></input>
+          <button id="sendBtn">➤</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <!-- Modals -->
+  <div id="accountsModal" class="overlay" style="display:none;"><div class="modal"><h2>Accounts</h2><div id="accountsList"></div><button id="closeAccountsBtn">Close</button></div></div>
+  <div id="emojiModal" class="overlay" style="display:none;"><div class="modal"><h2>Emojis</h2><div id="emojiList"></div><button id="closeEmojiBtn">Close</button></div></div>
+  <div id="fileModal" class="overlay" style="display:none;"><div class="modal"><h2>Send File</h2><input type="file" id="fileInput" multiple><button id="sendFileBtn">Send</button><button id="closeFileBtn">Close</button></div></div>
+  <div id="audioModal" class="overlay" style="display:none;"><div class="modal"><h2>Record Audio</h2><div class="audio-controls"><button id="startRecBtn">Record</button><button id="stopRecBtn" disabled>Stop</button></div><audio id="audioPreview" controls style="width:100%; display:none;"></audio><button id="sendAudioBtn" disabled>Send Audio</button><button id="closeAudioBtn">Close</button></div></div>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+  <script>
+    const cfg={apiKey:"AIzaSyCxPKZYqiBdlHTr6vUbIVIEvzwxpkeTOEQ",authDomain:"turtle-chat-a93fb.firebaseapp.com",databaseURL:"https://turtle-chat-a93fb-default-rtdb.firebaseio.com",projectId:"turtle-chat-a93fb",storageBucket:"turtle-chat-a93fb.appspot.com",messagingSenderId:"338945234611",appId:"1:338945234611:web:4abe6a3107bdee88b3c2c6"};
+    firebase.initializeApp(cfg); const db=firebase.database();
+    // DOM
+    const loginPage=document.getElementById('loginPage'), chatPage=document.getElementById('chatPage');
+    const uIn=document.getElementById('usernameInput'), pIn=document.getElementById('passwordInput');
+    const loginBtn=document.getElementById('loginBtn'), signUpBtn=document.getElementById('signUpBtn');
+    const ttaIn=document.getElementById('ttaCodeInput'), ownerLoginBtn=document.getElementById('ownerLoginBtn');
+    const logoutBtn=document.getElementById('logoutBtn');
+    const sendBtn=document.getElementById('sendBtn'), msgIn=document.getElementById('messageInput');
+    const chatArea=document.getElementById('chatArea');
+    const ownerControls=document.getElementById('ownerControls'), toggleDelModeBtn=document.getElementById('toggleDelModeBtn');
+    const viewAccountsBtn=document.getElementById('viewAccountsBtn'), accountsModal=document.getElementById('accountsModal'), accountsList=document.getElementById('accountsList'), closeAccountsBtn=document.getElementById('closeAccountsBtn');
+    const emojiBtn=document.getElementById('emojiBtn'), emojiModal=document.getElementById('emojiModal'), emojiList=document.getElementById('emojiList'), closeEmojiBtn=document.getElementById('closeEmojiBtn');
+    const fileBtn=document.getElementById('fileBtn'), fileModal=document.getElementById('fileModal'), fileInput=document.getElementById('fileInput'), sendFileBtn=document.getElementById('sendFileBtn'), closeFileBtn=document.getElementById('closeFileBtn');
+    const audioBtn=document.getElementById('audioBtn'), audioModal=document.getElementById('audioModal'), startRecBtn=document.getElementById('startRecBtn'), stopRecBtn=document.getElementById('stopRecBtn'), audioPreview=document.getElementById('audioPreview'), sendAudioBtn=document.getElementById('sendAudioBtn'), closeAudioBtn=document.getElementById('closeAudioBtn');
+    const fullScreenBtn=document.getElementById('fullScreenBtn'), chatContainer=document.getElementById('chatContainer');
+    let currentUser=null, isOwner=false, delMode=false, mediaRec, audioBlob;
+    const showLogin=()=>{loginPage.style.display='flex'; chatPage.style.display='none';};
+    const showChat=()=>{loginPage.style.display='none'; chatPage.style.display='block'; ownerControls.style.display=isOwner?'flex':'none'; loadRealtime();};
+    // Auth
+    signUpBtn.onclick=()=>{ const u=uIn.value.trim(), p=pIn.value.trim(); if(!u||!p) return alert('Fill both'); db.ref('users/'+u).set({username:u,password:p}); alert('Created'); };
+    loginBtn.onclick=()=>{ const u=uIn.value.trim(), p=pIn.value.trim(); if(!u||!p) return alert('Fill both'); db.ref('users/'+u).get().then(s=>{ const d=s.val(); if(d&&d.password===p){ currentUser=u; isOwner=false; showChat(); systemMsg(u+' has entered the chat'); } else alert('Invalid'); }); };
+    ownerLoginBtn.onclick=()=>{ if(ttaIn.value.trim()==='tta-3-21-12'){ currentUser='Owner'; isOwner=true; showChat(); systemMsg('Owner has entered the chat'); } else alert('Invalid TTA'); };
+    logoutBtn.onclick=()=>location.reload();
+    // Fullscreen
+    fullScreenBtn.onclick=()=>chatContainer.requestFullscreen();
+    // Delete
+    toggleDelModeBtn.onclick=()=>{ delMode=!delMode; toggleDelModeBtn.textContent=delMode?'Cancel Delete':'Delete Messages'; loadRealtime(); };
+    // Send text
+    sendBtn.onclick=()=>{ const t=msgIn.value.trim(); if(!t) return; db.ref('messages').push({user:currentUser,text:t}); msgIn.value=''; };
+    msgIn.addEventListener('keydown',e=>{ if(e.key==='Enter') sendBtn.click(); });
+    const systemMsg=t=>db.ref('messages').push({user:'System',text:t,ownerEnter:true});
+    // View Accounts
+    viewAccountsBtn.onclick=()=>{ accountsList.innerHTML=''; db.ref('users').get().then(s=>{ const d=s.val()||{}; Object.values(d).forEach(acc=>{ const div=document.createElement('div'); div.textContent=acc.username+': '+acc.password; const ban=document.createElement('button'); ban.textContent='Ban account'; ban.onclick=()=>db.ref('users/'+acc.username).remove().then(()=>div.remove()); div.appendChild(ban); accountsList.appendChild(div); }); accountsModal.style.display='flex'; }); };
+    closeAccountsBtn.onclick=()=>accountsModal.style.display='none';
+    // Emoji
+    emojiBtn.onclick=()=>{ emojiList.innerHTML=''; ['😀','😂','😍','👍','🚀','😎','😉','🤖','🎉','🔥'].forEach(e=>{ const b=document.createElement('button'); b.textContent=e; b.onclick=()=>{ msgIn.value+=e; emojiModal.style.display='none'; }; emojiList.appendChild(b); }); emojiModal.style.display='flex'; };
+    closeEmojiBtn.onclick=()=>emojiModal.style.display='none';
+    // File modal
+    fileBtn.onclick=()=>fileModal.style.display='flex';
+    sendFileBtn.onclick=()=>{ Array.from(fileInput.files).forEach(f=>{ const r=new FileReader(); r.onload=()=>db.ref('messages').push({user:currentUser,text:'[file] '+f.name,file:r.result}); r.readAsDataURL(f); }); fileModal.style.display='none'; fileInput.value=null; };
+    closeFileBtn.onclick=()=>{ fileModal.style.display='none'; fileInput.value=null; };
+    // Audio modal
+    audioBtn.onclick=()=>audioModal.style.display='flex';
+    startRecBtn.onclick=()=>{
+      navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+        mediaRec=new MediaRecorder(stream); const chunks=[];
+        mediaRec.ondataavailable=e=>chunks.push(e.data);
+        mediaRec.onstop=()=>{ audioBlob=new Blob(chunks,{type:'audio/webm'}); const url=URL.createObjectURL(audioBlob); audioPreview.src=url; audioPreview.style.display='block'; sendAudioBtn.disabled=false; };
+        mediaRec.start(); startRecBtn.disabled=true; stopRecBtn.disabled=false;
+      });
+    };
+    stopRecBtn.onclick=()=>{ mediaRec.stop(); startRecBtn.disabled=false; stopRecBtn.disabled=true; };
+    sendAudioBtn.onclick=()=>{ const reader=new FileReader(); reader.onload=()=>db.ref('messages').push({user:currentUser,text:'[audio]',audioUrl:reader.result}); reader.readAsDataURL(audioBlob); audioModal.style.display='none'; audioPreview.style.display='none'; sendAudioBtn.disabled=true; };
+    closeAudioBtn.onclick=()=>{ audioModal.style.display='none'; audioPreview.style.display='none'; sendAudioBtn.disabled=true; mediaRec&&mediaRec.state==='recording'&&mediaRec.stop(); };
+    // Real-time
+    function loadRealtime(){ chatArea.innerHTML=''; const refMsgs=db.ref('messages'); refMsgs.off(); refMsgs.on('child_added',()=>renderAll()); refMsgs.on('child_removed',()=>renderAll()); }
+    function renderAll(){ db.ref('messages').get().then(s=>{ chatArea.innerHTML=''; const d=s.val()||{}; Object.entries(d).forEach(([k,m])=>{ const div=document.createElement('div'); div.className='message '+(m.user===currentUser?'self':'other')+(m.user==='Owner'?' owner':'')+(m.ownerEnter?' owner-enter':''); const uSpan=document.createElement('span'); uSpan.textContent=m.user+': '; if(m.user==='Owner')uSpan.style.color='red'; const tSpan=document.createElement('span'); tSpan.textContent=m.text; div.appendChild(uSpan); div.appendChild(tSpan); if(m.audioUrl){ const a=document.createElement('audio'); a.src=m.audioUrl; a.controls=true; div.appendChild(a);} if(m.file){ const link=document.createElement('a'); link.href=m.file; link.download=m.text.replace('[file] ',''); link.textContent=m.text; div.appendChild(link);} if(delMode&&(isOwner||m.user===currentUser)){ const btn=document.createElement('button'); btn.className='delete-btn'; btn.textContent='✖'; btn.onclick=()=>db.ref('messages/'+k).remove(); div.appendChild(btn);} chatArea.appendChild(div);} ); chatArea.scrollTop=chatArea.scrollHeight; }); }
+    window.addEventListener('DOMContentLoaded',()=>{ showLogin(); });
+  </script>
+</body>
+</html>
